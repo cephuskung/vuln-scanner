@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Asset Inventory{% endblock %}
+{% block content %}
+
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Inventory</span>
+        <h1>Asset Inventory</h1>
+    </div>
+    <div class="top-right">
+        <a class="btn" href="{{ url_for('scan_page') }}">Scan a New Asset</a>
+    </div>
+</div>
+
+<form class="filter-bar" method="GET" action="{{ url_for('assets') }}">
+    <input type="text" name="search" placeholder="Search by name, IP, or owner…" value="{{ search }}">
+    <button type="submit" class="btn secondary">Search</button>
+</form>
+
+<table>
+    <tr>
+        <th>Name</th>
+        <th>IP Address</th>
+        <th>OS</th>
+        <th>Exposure</th>
+        <th>Owner</th>
+        <th>Criticality</th>
+        <th>Scans</th>
+        <th>Latest Risk</th>
+        <th>Last Scanned</th>
+    </tr>
+    {% for a in assets %}
+    <tr>
+        <td><a href="{{ url_for('asset_detail', asset_id=a.id) }}">{{ a.hostname or a.name or a.ip_address }}</a></td>
+        <td>{{ a.ip_address }}</td>
+        <td>{{ a.os or "Unknown" }}</td>
+        <td>{{ a.exposure }}</td>
+        <td>{{ a.owner or "—" }}</td>
+        <td><span class="criticality-pill crit-{{ a.criticality }}">{{ a.criticality }}</span></td>
+        <td>{{ a.scan_count }}</td>
+        <td>{{ a.latest_risk }}</td>
+        <td class="time-cell">{{ a.last_scanned or "Never" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" style="text-align:center; color: var(--muted);">No assets yet — run a scan to add one.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}

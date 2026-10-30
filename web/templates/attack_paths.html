@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Attack Paths{% endblock %}
+{% block content %}
+
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Attack Surface Modeling</span>
+        <h1>Attack Path Analysis</h1>
+    </div>
+    <div class="top-right">
+        <div class="clock">Graph<br><span>{{ node_count }} nodes · {{ edge_count }} edges</span></div>
+    </div>
+</div>
+
+<p style="color: var(--muted); font-size: 13px; margin: -8px 0 20px 4px; max-width: 780px;">
+    Built live from your current asset exposure, criticality, and exploitable findings (CVSS ≥ 7,
+    weighted lower/easier if the CVE is in CISA's Known Exploited Vulnerabilities catalog).
+    Assets on the same /24 subnet as a compromised host are treated as reachable via lateral movement.
+</p>
+
+<p class="section-label">Attack Graph</p>
+<div class="chart-panel" style="margin-bottom: 22px;">
+    <div id="attack-graph" style="width: 100%; height: 480px;"></div>
+</div>
+
+<p class="section-label">Paths to Critical Assets</p>
+{% if paths %}
+    {% for target in paths %}
+    <div class="panel" style="margin-bottom: 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+            <b style="font-family:'Space Grotesk',sans-serif; font-size:16px;">{{ target.target_label }}</b>
+            <span class="criticality-pill crit-CRITICAL">CRITICAL ASSET</span>
+        </div>
+        {% for p in target.paths %}
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:'IBM Plex Mono',monospace; font-size:13px; padding:8px 0; border-top: 1px solid var(--border);">
+            {% for label in p.labels %}
+                <span style="padding:3px 10px; border-radius:6px; background: var(--surface-alt);">{{ label }}</span>
+                {% if not loop.last %}<span style="color: var(--muted);">→</span>{% endif %}
+            {% endfor %}
+            <span style="margin-left:auto; color: var(--muted); font-size:12px;">weight {{ p.weight }} · {{ p.hops }} hop(s)</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+{% else %}
+<div class="panel" style="text-align:center; color: var(--muted); padding: 32px;">
+    No attack paths to CRITICAL assets found yet.<br>
+    <span style="font-size:12px;">This shows up once an asset is marked <b>Criticality: CRITICAL</b> on its
+    <a href="{{ url_for('assets') }}" style="color: var(--accent);">asset profile page</a> and there's a
+    reachable path to it (an internet-exposed asset with an exploitable finding, or lateral movement
+    from one).</span>
+</div>
+{% endif %}
+
+<p class="section-label">Choke Points (highest betweenness centrality)</p>
+<table>
+    <tr><th>Asset</th><th>Criticality</th><th>Exposure</th><th>Centrality Score</th></tr>
+    {% for c in choke_points %}
+    <tr>
+        <td>{{ c.label }}</td>
+        <td><span class="criticality-pill crit-{{ c.criticality }}">{{ c.criticality }}</span></td>
+        <td>{{ c.exposure }}</td>
+        <td>{{ c.centrality }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center; color: var(--muted);">Not enough graph connectivity yet to identify choke points.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape.js-dagre/2.5.0/cytoscape-dagre.min.js"></script>
+<script>
+fetch('/api/attack-graph')
+    .then(r => r.json())
+    .then(data => {
+        const colorFor = (crit) => ({
+            CRITICAL: '#dc2626', HIGH: '#d97706', MEDIUM: '#b58900', LOW: '#16a34a'
+        }[crit] || '#8a93a3');
+
+        const elements = [
+            ...data.nodes.map(n => ({
+                data: {
+                    id: n.id,
+                    label: n.label,
+                    color: n.type === 'entrypoint' ? '#0d6efd' : colorFor(n.criticality),
+                }
+            })),
+            ...data.edges.map(e => ({
+                data: { source: e.source, target: e.target, weight: e.weight, reason: e.reason }
+            }))
+        ];
+
+        cytoscape({
+            container: document.getElementById('attack-graph'),
+            elements: elements,
+            layout: { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 90 },
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': 'data(color)',
+                        'label': 'data(label)',
+                        'color': '#1a2233',
+                        'font-family': 'IBM Plex Mono, monospace',
+                        'font-size': '11px',
+                        'text-valign': 'bottom',
+                        'text-margin-y': 6,
+                        'width': 34,
+                        'height': 34,
+                        'border-width': 2,
+                        'border-color': '#ffffff',
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 2,
+                        'line-color': '#c7ceda',
+                        'target-arrow-color': '#c7ceda',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                        'label': 'data(weight)',
+                        'font-size': '9px',
+                        'color': '#8a93a3',
+                    }
+                }
+            ]
+        });
+    })
+    .catch(err => {
+        document.getElementById('attack-graph').innerHTML =
+            '<p style="color: var(--muted); padding: 20px;">Could not load graph data.</p>';
+    });
+</script>
+{% endblock %}

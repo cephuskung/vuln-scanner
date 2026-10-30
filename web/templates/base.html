@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Security Operations Dashboard{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+{% if current_user.is_authenticated %}
+<nav class="topnav">
+    <a class="brand" href="{{ url_for('dashboard') }}">🛡 SentriX</a>
+    <div class="links">
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('assets') }}">Assets</a>
+        <a href="{{ url_for('vulnerabilities_view') }}">Vulnerabilities</a>
+        <a href="{{ url_for('scan_page') }}">New / Scheduled Scans</a>
+        <a href="{{ url_for('attack_paths') }}">Attack Paths</a>
+        <a href="{{ url_for('analytics') }}">Analytics</a>
+        {% if current_user.role == 'admin' %}<a href="{{ url_for('settings') }}">Settings</a>{% endif %}
+        <span class="user">{{ current_user.username }} ({{ current_user.role }})</span>
+        <a href="{{ url_for('logout') }}">Log out</a>
+    </div>
+</nav>
+{% endif %}
+<div class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

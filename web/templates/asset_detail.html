@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.name or asset.ip_address }} — Asset Profile{% endblock %}
+{% block content %}
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Asset Profile</span>
+        <h1>{{ asset.hostname or asset.name or asset.ip_address }}</h1>
+    </div>
+    <div class="top-right">
+        <span class="criticality-pill crit-{{ asset.criticality }}">{{ asset.criticality }}</span>
+        <a class="btn" href="{{ url_for('assets') }}">Back to Inventory</a>
+    </div>
+</div>
+<div class="grid">
+    <div class="card neutral-card">
+        <p class="card-label">Current Risk</p>
+        <p class="card-value">{{ risk_score }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">IP Address</p>
+        <p class="card-value" style="font-size:20px;">{{ asset.ip_address }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Exposure</p>
+        <p class="card-value" style="font-size:20px;">{{ asset.exposure }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">OS</p>
+        <p class="card-value" style="font-size:18px;">{{ asset.os or "Unknown" }}</p>
+    </div>
+</div>
+<p class="section-label">Edit Profile</p>
+<div class="panel">
+    <form method="POST" action="{{ url_for('asset_update', asset_id=asset.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row">
+            <div style="flex:1;">
+                <label for="hostname">Hostname</label>
+                <input type="text" id="hostname" name="hostname" value="{{ asset.hostname or '' }}" placeholder="e.g. web-prod-01">
+            </div>
+            <div style="flex:1;">
+                <label for="owner">Owner</label>
+                <input type="text" id="owner" name="owner" value="{{ asset.owner or '' }}" placeholder="e.g. platform-team">
+            </div>
+        </div>
+        <div class="row">
+            <div style="flex:1;">
+                <label for="exposure">Exposure</label>
+                <select id="exposure" name="exposure">
+                    <option value="INTERNAL" {% if asset.exposure == 'INTERNAL' %}selected{% endif %}>Internal</option>
+                    <option value="EXTERNAL" {% if asset.exposure == 'EXTERNAL' %}selected{% endif %}>External (internet-facing)</option>
+                </select>
+            </div>
+            <div style="flex:1;">
+                <label for="criticality">Criticality</label>
+                <select id="criticality" name="criticality">
+                    {% for c in ['CRITICAL','HIGH','MEDIUM','LOW'] %}
+                    <option value="{{ c }}" {% if asset.criticality == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="flex:1;">
+                <label for="business_impact">Business Impact</label>
+                <select id="business_impact" name="business_impact">
+                    {% for c in ['CRITICAL','HIGH','MEDIUM','LOW'] %}
+                    <option value="{{ c }}" {% if asset.business_impact == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="btn" style="margin-top:16px;">Save Profile</button>
+    </form>
+</div>
+<p class="section-label">Current Services ({{ services|length }})</p>
+<table style="margin-bottom: 24px;">
+    <tr><th>Port</th><th>Protocol</th><th>Service</th><th>Version</th><th>Detected</th></tr>
+    {% for s in services %}
+    <tr>
+        <td>{{ s.port_number }}</td>
+        <td>{{ s.protocol }}</td>
+        <td>{{ s.service or "—" }}</td>
+        <td>{{ s.version or "—" }}</td>
+        <td class="time-cell">{{ s.detected_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" style="text-align:center; color: var(--muted);">No services recorded yet — run a scan.</td></tr>
+    {% endfor %}
+</table>
+<p class="section-label">Vulnerability History (all scans)</p>
+<table style="margin-bottom: 24px;">
+    <tr><th>Scan</th><th>CVE</th><th>Severity</th><th>CVSS</th><th>Service</th><th>Found</th></tr>
+    {% for v in vulnerabilities %}
+    <tr>
+        <td><a href="{{ url_for('scan_detail', scan_id=v.scan_id) }}">#{{ v.scan_id }}</a></td>
+        <td>{{ v.cve_id or "—" }}</td>
+        <td><span class="badge sev-{{ v.severity }}">{{ v.severity }}</span></td>
+        <td>{{ v.cvss_score if v.cvss_score is not none else "—" }}</td>
+        <td>{{ v.service }}</td>
+        <td class="time-cell">{{ v.scan_time }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="text-align:center; color: var(--muted);">No vulnerabilities recorded.</td></tr>
+    {% endfor %}
+</table>
+<p class="section-label">Scan History</p>
+<table>
+    <tr><th>ID</th><th>Type</th><th>Status</th><th>Risk</th><th>Time</th><th></th></tr>
+    {% for s in scan_history %}
+    <tr>
+        <td class="id-cell">{{ s.id }}</td>
+        <td>{{ s.scan_type }}</td>
+        <td><span class="badge status-{{ s.status }}">{{ s.status }}</span></td>
+        <td>{{ s.total_risk }}</td>
+        <td class="time-cell">{{ s.scan_time }}</td>
+        <td><a href="{{ url_for('scan_detail', scan_id=s.id) }}">View →</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="text-align:center; color: var(--muted);">No scans yet.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}

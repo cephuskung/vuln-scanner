@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Live Monitoring</span>
+        <h1>Security Operations Center</h1>
+    </div>
+    <div class="top-right">
+        <div class="clock">Local time<br><span id="live-clock">--:--:--</span></div>
+        <a class="btn secondary" href="{{ url_for('executive_report_pdf') }}">Executive Report (PDF)</a>
+        <a class="btn" href="{{ url_for('scan_page') }}">Run New Scan</a>
+    </div>
+</div>
+
+<!-- Platform-wide widgets: posture + attack surface, tying Phases 3-4 into the main view -->
+<div class="grid" style="grid-template-columns: repeat(2, 1fr); max-width: 600px;">
+    <a href="{{ url_for('analytics') }}" style="text-decoration:none; color:inherit;">
+        <div class="card neutral-card">
+            <p class="card-label">Security Posture</p>
+            <p class="card-value">{{ posture.overall_score if posture else "—" }}</p>
+        </div>
+    </a>
+    <a href="{{ url_for('attack_paths') }}" style="text-decoration:none; color:inherit;">
+        <div class="card {{ 'critical-card' if critical_path_count > 0 else 'neutral-card' }}">
+            <p class="card-label">Paths to Critical Assets</p>
+            <p class="card-value {{ 'critical' if critical_path_count > 0 else '' }}">{{ critical_path_count }}</p>
+        </div>
+    </a>
+</div>
+
+<!-- Executive KPI cards -->
+<div class="grid kpi">
+    <div class="card neutral-card">
+        <p class="card-label">Assets</p>
+        <p class="card-value">{{ kpis.total_assets }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Total Scans</p>
+        <p class="card-value">{{ kpis.total_scans }}</p>
+    </div>
+    <div class="card high-card">
+        <p class="card-label">Running Now</p>
+        <p class="card-value high">{{ kpis.running_scans }}</p>
+    </div>
+    <div class="card critical-card">
+        <p class="card-label">Critical Findings</p>
+        <p class="card-value critical">{{ kpis.critical_vulns }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Avg Risk Score</p>
+        <p class="card-value">{{ kpis.avg_risk }}</p>
+    </div>
+</div>
+
+<!-- Severity breakdown cards -->
+<div class="grid">
+    <div class="card critical-card">
+        <p class="card-label">Critical</p>
+        <p class="card-value critical">{{ stats.CRITICAL }}</p>
+    </div>
+    <div class="card high-card">
+        <p class="card-label">High</p>
+        <p class="card-value high">{{ stats.HIGH }}</p>
+    </div>
+    <div class="card medium-card">
+        <p class="card-label">Medium</p>
+        <p class="card-value medium">{{ stats.MEDIUM }}</p>
+    </div>
+    <div class="card low-card">
+        <p class="card-label">Low</p>
+        <p class="card-value low">{{ stats.LOW }}</p>
+    </div>
+</div>
+
+<!-- Interactive charts -->
+<div class="charts-row">
+    <div class="chart-panel">
+        <h3>Vulnerability Severity Distribution</h3>
+        <canvas id="severityChart" height="180"></canvas>
+    </div>
+    <div class="chart-panel">
+        <h3>Risk Score Trend (recent scans)</h3>
+        <canvas id="trendChart" height="180"></canvas>
+    </div>
+</div>
+
+<!-- Search + filtering -->
+<p class="section-label">Scan Operations</p>
+<form class="filter-bar" method="GET" action="{{ url_for('dashboard') }}">
+    <input type="text" name="search" placeholder="Search by target IP…" value="{{ filters.search }}">
+    <select name="status">
+        <option value="">All statuses</option>
+        {% for s in ['queued', 'running', 'completed', 'failed'] %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s|capitalize }}</option>
+        {% endfor %}
+    </select>
+    <select name="severity">
+        <option value="">Any severity</option>
+        {% for sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] %}
+        <option value="{{ sev }}" {% if filters.severity == sev %}selected{% endif %}>{{ sev }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn secondary">Filter</button>
+</form>
+
+<table>
+    <tr>
+        <th>ID</th>
+        <th>Target</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Risk Score</th>
+        <th>Time</th>
+        <th>Action</th>
+    </tr>
+    {% for s in scans %}
+    <tr data-scan-id="{{ s.id }}">
+        <td class="id-cell">{{ s.id }}</td>
+        <td>{{ s.target }}</td>
+        <td>{{ s.scan_type }}</td>
+        <td><span class="badge status-{{ s.status }}" data-status-badge>{{ s.status }}</span></td>
+        <td data-risk-score>{{ s.total_risk }}</td>
+        <td class="time-cell">{{ s.scan_time }}</td>
+        <td><a href="{{ url_for('scan_detail', scan_id=s.id) }}">View →</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" style="text-align:center; color: var(--muted);">No scans yet. Run one to get started.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+function updateClock() {
+    const el = document.getElementById('live-clock');
+    if (el) el.textContent = new Date().toLocaleTimeString();
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ----- Real-time scan status polling for any scan still running -----
+function pollRunningScans() {
+    document.querySelectorAll('tr[data-scan-id]').forEach(row => {
+        const badge = row.querySelector('[data-status-badge]');
+        if (!badge || !(badge.classList.contains('status-running') || badge.classList.contains('status-queued'))) return;
+
+        const scanId = row.getAttribute('data-scan-id');
+        fetch(`/scan/${scanId}/status`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== badge.textContent.trim()) {
+                    badge.textContent = data.status;
+                    badge.className = 'badge status-' + data.status;
+                    row.querySelector('[data-risk-score]').textContent = data.total_risk;
+                }
+            })
+            .catch(() => {});
+    });
+}
+setInterval(pollRunningScans, 4000);
+
+// ----- Charts -----
+fetch('/api/chart-data')
+    .then(r => r.json())
+    .then(data => {
+        const sevCtx = document.getElementById('severityChart');
+        new Chart(sevCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Critical', 'High', 'Medium', 'Low', 'Unknown'],
+                datasets: [{
+                    data: [
+                        data.severity.CRITICAL, data.severity.HIGH,
+                        data.severity.MEDIUM, data.severity.LOW, data.severity.Unknown
+                    ],
+                    backgroundColor: ['#dc2626', '#d97706', '#b58900', '#16a34a', '#8a93a3'],
+                    borderWidth: 0,
+                }]
+            },
+            options: { plugins: { legend: { position: 'bottom' } } }
+        });
+
+        const trendCtx = document.getElementById('trendChart');
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: data.trend.labels,
+                datasets: [{
+                    label: 'Risk score',
+                    data: data.trend.scores,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13,110,253,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: { x: { ticks: { display: false } } }
+            }
+        });
+    });
+</script>
+{% endblock %}

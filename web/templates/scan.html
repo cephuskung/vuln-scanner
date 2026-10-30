@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}New / Scheduled Scans{% endblock %}
+{% block content %}
+<div class="scan-wrap">
+    <span class="eyebrow"><span class="pulse-dot"></span>New Scan</span>
+    <h1>Run a Scan</h1>
+    <div class="tabs" role="tablist">
+        <a href="?tab=network" class="tab" data-tab="network">Network / Host</a>
+        <a href="?tab=software" class="tab" data-tab="software">Software</a>
+        <a href="?tab=system" class="tab" data-tab="system">System</a>
+    </div>
+    <noscript><style>.tabpane[hidden]{display:block !important}</style></noscript>
+
+    <div id="tab-network" class="tabpane" hidden>
+    <p class="sub">Network / Host scan: Nmap discovers open ports and services on a remote IP, hostname or CIDR range (e.g. 192.168.1.0/24). A range is first swept for live hosts, then each host is scanned individually. This sees only what the host exposes on the network - it is not a system audit.</p>
+    <div class="panel">
+        <form method="POST" action="{{ url_for('scan') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="target-ip">Target (IP, hostname or CIDR range)</label>
+            <div class="row">
+                <input type="text" id="target-ip" name="target" placeholder="e.g. 127.0.0.1" required>
+                <button type="submit" class="btn">Start Scan</button>
+            </div>
+        </form>
+    </div>
+    <span class="eyebrow"><span class="pulse-dot"></span>Scan Scheduling</span>
+    <h1 style="font-size: 20px; margin-top: 4px;">Recurring Scans</h1>
+    <p class="sub">Automatically re-scan a target on an interval.</p>
+    <div class="panel">
+        <form method="POST" action="{{ url_for('schedule') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="sched-target">Target (IP, hostname or CIDR range)</label>
+            <input type="text" id="sched-target" name="target" placeholder="e.g. 10.0.0.15" required>
+            <label for="interval">Repeat every</label>
+            <select id="interval" name="interval_minutes">
+                <option value="60">Hourly</option>
+                <option value="1440" selected>Daily</option>
+                <option value="10080">Weekly</option>
+            </select>
+            <button type="submit" class="btn" style="margin-top: 16px;">Add Schedule</button>
+        </form>
+    </div>
+    {% if scheduled %}
+    <table style="margin-bottom: 24px;">
+        <tr><th>Target</th><th>Interval</th><th>Next Run</th><th>Active</th><th></th></tr>
+        {% for job in scheduled %}
+        <tr>
+            <td>{{ job.target }}</td>
+            <td>{{ job.interval_minutes }} min</td>
+            <td class="time-cell">{{ job.next_run }}</td>
+            <td>{{ "Yes" if job.active else "Paused" }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('toggle_schedule', scheduled_id=job.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="active" value="{{ '0' if job.active else '1' }}">
+                    <button type="submit" class="btn secondary" style="padding: 6px 12px; font-size: 12px;">
+                        {{ "Pause" if job.active else "Resume" }}
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    </div><!-- /tab-network -->
+
+    <!-- ================= SOFTWARE SCAN ================= -->
+    <div id="tab-software" class="tabpane" hidden>
+    <span class="eyebrow">Installed applications</span>
+    <h1 style="font-size: 20px; margin-top: 4px;">Scan this computer</h1>
+    <div class="panel" id="local-software-panel">
+        <div class="sysgrid">
+            <div class="kv"><b>Computer inspected</b>{{ local_host.computer_name }}</div>
+            <div class="kv"><b>Operating system</b>{{ local_host.os }}</div>
+            <div class="kv"><b>Scope</b>The computer running the SentriX server process</div>
+        </div>
+        <p class="field-help">Reads the Windows registry's installed-application entries (read-only), then assesses each distinct application against NVD with the same engine as every other scan. This inspects the <b>SentriX server computer</b> - not the computer your browser is running on. Portable applications and software with no uninstall entry cannot be discovered this way.</p>
+        {% if not local_host.supported %}
+        <div class="notice notice-warn">Scan this computer needs the SentriX server to run on Windows; this server is running {{ local_host.system }}. Use the manual lookup below to assess specific software.</div>
+        {% elif not is_admin %}
+        <div class="notice notice-warn">Only administrators can inspect the SentriX server computer.</div>
+        {% endif %}
+        <form method="POST" action="{{ url_for('software_scan_local') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn" {% if not local_host.supported or not is_admin %}disabled{% endif %}>Scan this computer</button>
+        </form>
+    </div>
+
+    <span class="eyebrow">Secondary</span>
+    <h1 style="font-size: 20px; margin-top: 4px;">Manual software lookup</h1>
+    <p class="sub">Assess specific software you name (vendor, product, version) against NVD vulnerability data using the same matching engine. Nothing is inspected on any machine - the result is only as accurate as what you enter.</p>
+    <div class="panel">
+        <form method="POST" action="{{ url_for('software_scan') }}" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="sw-quick">Quick select (optional)</label>
+            <select id="sw-quick">
+                <option value="">- choose well-known software, or type your own below -</option>
+                {% for c in catalog %}<option value="{{ loop.index0 }}">{{ c.display }}</option>{% endfor %}
+            </select>
+            <div class="grid2">
+                <div><label for="sw-vendor">Vendor <span class="opt">(optional)</span></label>
+                    <input type="text" id="sw-vendor" name="vendor" maxlength="100" placeholder="e.g. openbsd"></div>
+                <div><label for="sw-product">Product name</label>
+                    <input type="text" id="sw-product" name="product" maxlength="100" placeholder="e.g. OpenSSH"></div>
+                <div><label for="sw-version">Version</label>
+                    <input type="text" id="sw-version" name="version" maxlength="64" placeholder="e.g. 8.9p1"></div>
+            </div>
+            <p class="field-help">The exact version matters: with no version, the affected-version ranges cannot be evaluated and any CVEs shown are marked <b>indeterminate</b>. Unrecognised vendor/product names are matched by name only and marked <b>potential</b>.</p>
+            <details><summary>Advanced: CPE, bulk list, asset</summary>
+                <label for="sw-cpe">CPE <span class="opt">(optional - application CPEs only)</span></label>
+                <input type="text" id="sw-cpe" name="cpe" maxlength="200" placeholder="cpe:2.3:a:openbsd:openssh:8.9p1">
+                <label for="sw-bulk">Several items - one per line: <code>vendor, product, version</code> <span class="opt">(max {{ max_software_items }}; leave a field empty if unknown)</span></label>
+                <textarea id="sw-bulk" name="bulk" rows="4" spellcheck="false" placeholder="openbsd, OpenSSH, 8.9p1&#10;, openssl, 3.0.2"></textarea>
+                <label for="sw-asset">Attach to an asset <span class="opt">(optional - its exposure/criticality then feed contextual risk)</span></label>
+                <select id="sw-asset" name="asset_id">
+                    <option value="">- none -</option>
+                    {% for a in assets %}<option value="{{ a.id }}">{{ a.name or a.hostname or a.ip_address }} ({{ a.ip_address }})</option>{% endfor %}
+                </select>
+            </details>
+            <button type="submit" class="btn" style="margin-top: 16px;">Assess Software</button>
+        </form>
+    </div>
+    </div><!-- /tab-software -->
+
+    <!-- ================= SYSTEM SCAN ================= -->
+    <div id="tab-system" class="tabpane" hidden>
+    <span class="eyebrow">Windows - malware / threat assessment</span>
+    <h1 style="font-size: 20px; margin-top: 4px;">This computer (Microsoft Defender)</h1>
+    <div class="panel" id="windows-defender-panel">
+        <div class="sysgrid">
+            <div class="kv"><b>Computer inspected</b>{{ local_host.computer_name }}</div>
+            <div class="kv"><b>Operating system</b>{{ local_host.os }}</div>
+            <div class="kv"><b>Engine</b>Microsoft Defender Antivirus (via its PowerShell cmdlets)</div>
+        </div>
+        <p class="field-help">SentriX drives the antivirus Windows already has; it does not scan for malware itself and never deletes, quarantines or executes anything. This covers the <b>SentriX server computer only</b> - remote Windows endpoints are not supported. Reading status and running scans need SentriX to run with Administrator rights; if Windows denies a request, the result says so.</p>
+        {% if not local_host.supported %}
+        <div class="notice notice-warn">The Defender integration needs the SentriX server to run on Windows; this server is running {{ local_host.system }}. The Linux System Scan below is unaffected.</div>
+        {% elif not is_admin %}
+        <div class="notice notice-warn">Only administrators can inspect the SentriX server computer.</div>
+        {% endif %}
+        <form method="POST" action="{{ url_for('system_scan_windows') }}" id="windows-form" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>What to run</label>
+            <div class="mode-row" style="flex-direction:column; align-items:flex-start; gap:6px;">
+                <label class="radio"><input type="radio" name="action" value="status" checked> Protection status only <span class="opt">(read-only, no scan)</span></label>
+                <label class="radio"><input type="radio" name="action" value="quick"> Quick Scan</label>
+                <label class="radio"><input type="radio" name="action" value="full"> Full Scan</label>
+                <label class="radio"><input type="radio" name="action" value="custom"> Custom Scan <span class="opt">(one file or folder)</span></label>
+            </div>
+            <div id="win-path-row" style="display:none;">
+                <label for="win-path">File or folder to scan</label>
+                <input type="text" id="win-path" name="scan_path" maxlength="1024" placeholder="e.g. C:\Users\Public\Downloads">
+                <p class="field-help">A local absolute path. Network (UNC) paths, wildcards and relative paths are not accepted.</p>
+            </div>
+            <div id="win-duration" class="notice" style="display:none;"></div>
+            <label class="check" id="win-confirm-row" style="display:none;"><input type="checkbox" name="confirm_scan" value="1" id="win-confirm"> I understand how long this scan can take and that it uses CPU and disk on the SentriX server computer</label>
+            <div class="row" style="margin-top:12px;">
+                <button type="submit" class="btn" {% if not local_host.supported or not is_admin %}disabled{% endif %}>Start</button>
+                <button type="button" class="btn secondary" id="win-check-status" {% if not local_host.supported or not is_admin %}disabled{% endif %}>Check protection now</button>
+            </div>
+            <div id="win-status-out" class="notice" style="display:none; margin-top:10px;"></div>
+        </form>
+    </div>
+
+    <span class="eyebrow">Linux</span>
+    <h1 style="font-size: 20px; margin-top: 4px;">Linux System Scan</h1>
+    <p class="sub">System scan: inspect a computer or server <b>from the inside</b> - OS and kernel, installed software, listening services, security configuration and permissions, and CVEs for the installed software. Linux targets only. Checks that need root or credentials are reported as <b>not assessed</b>, never as passed.</p>
+    <div class="panel">
+        <form method="POST" action="{{ url_for('system_scan') }}" autocomplete="off" id="system-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Mode</label>
+            <div class="mode-row">
+                <label class="radio"><input type="radio" name="mode" value="remote" checked> Remote machine over SSH <span class="opt">(key authentication)</span></label>
+                {% if not windows_server %}<label class="radio" {% if not is_admin %}title="Administrators only"{% endif %}><input type="radio" name="mode" value="local" {% if not is_admin %}disabled{% endif %}> Local - the SentriX server itself {% if not is_admin %}<span class="opt">(administrators only)</span>{% endif %}</label>{% endif %}
+            </div>
+            <div id="remote-fields">
+                {% if not ssh_available %}<div class="notice notice-warn">The OpenSSH client tools (ssh, ssh-keyscan, ssh-keygen) are not installed on the SentriX server, so remote scans are unavailable.</div>{% endif %}
+                <div class="grid2">
+                    <div><label for="sys-host">Host (IP or hostname)</label>
+                        <input type="text" id="sys-host" name="host" maxlength="253" placeholder="e.g. 10.0.0.15"></div>
+                    <div><label for="sys-port">SSH port</label>
+                        <input type="number" id="sys-port" name="port" min="1" max="65535" value="22"></div>
+                    <div><label for="sys-user">SSH username</label>
+                        <input type="text" id="sys-user" name="username" maxlength="32" placeholder="e.g. sentrix-audit"></div>
+                </div>
+                <label for="sys-key">SSH private key <span class="opt">(unencrypted; used for this scan only - never stored or logged)</span></label>
+                <textarea id="sys-key" name="private_key" rows="5" spellcheck="false" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+                <label for="sys-fp">Server host key fingerprint</label>
+                <input type="text" id="sys-fp" name="fingerprint" maxlength="80" placeholder="SHA256:...  (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub)">
+                <label class="check"><input type="checkbox" name="accept_unverified" value="1"> Accept an unverified host key instead <span class="opt">(insecure - the scan could be answered by an impostor; recorded on the scan)</span></label>
+            </div>
+            <label class="check"><input type="checkbox" name="use_sudo" value="1"> Use <code>sudo -n</code> for checks that need root <span class="opt">(account needs passwordless sudo; otherwise those checks are reported as not assessed)</span></label>
+            <p class="field-help">Use a dedicated, unprivileged account. SentriX only runs fixed, read-only commands. Without root, these checks cannot run and are reported as <b>not assessed</b>: effective sshd settings, firewall rules, reading /etc/shadow, and process names for other users' sockets.</p>
+            <button type="submit" class="btn" style="margin-top: 16px;">Start System Scan</button>
+        </form>
+    </div>
+    </div><!-- /tab-system -->
+
+    <a class="back-link" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+</div>
+<script>
+(function () {
+    const catalog = {{ catalog|tojson }};
+    function showTab(name) {
+        document.querySelectorAll('.tabpane').forEach(p => p.hidden = (p.id !== 'tab-' + name));
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    }
+    document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', e => { e.preventDefault(); showTab(t.dataset.tab); history.replaceState(null, '', '?tab=' + t.dataset.tab); }));
+    showTab('{{ tab }}');
+    const quick = document.getElementById('sw-quick');
+    if (quick) quick.addEventListener('change', () => {
+        const c = catalog[quick.value]; if (!c) return;
+        document.getElementById('sw-vendor').value = c.vendor;
+        document.getElementById('sw-product').value = c.display;
+    });
+    const durations = {{ durations|tojson }};
+    const wForm = document.getElementById('windows-form');
+    if (wForm) {
+        const pathRow = document.getElementById('win-path-row'), dur = document.getElementById('win-duration');
+        const confirmRow = document.getElementById('win-confirm-row'), confirmBox = document.getElementById('win-confirm');
+        function syncWin() {
+            const a = wForm.querySelector('input[name=action]:checked').value;
+            pathRow.style.display = (a === 'custom') ? '' : 'none';
+            const scan = a !== 'status';
+            confirmRow.style.display = scan ? '' : 'none';
+            confirmBox.required = scan;
+            dur.style.display = scan ? '' : 'none';
+            dur.textContent = scan ? durations[a] : '';
+        }
+        wForm.querySelectorAll('input[name=action]').forEach(r => r.addEventListener('change', syncWin)); syncWin();
+        const out = document.getElementById('win-status-out');
+        document.getElementById('win-check-status').addEventListener('click', () => {
+            out.style.display = ''; out.textContent = 'Checking Microsoft Defender...';
+            fetch('{{ url_for("api_defender_status") }}').then(r => r.json()).then(d => {
+                out.textContent = 'State: ' + d.state + '. ' + d.summary
+                    + (d.signature_version ? ' Security intelligence ' + d.signature_version + ' (updated ' + d.signature_updated + ').' : '');
+            }).catch(() => { out.textContent = 'The status check failed.'; });
+        });
+    }
+    const modes = document.querySelectorAll('#system-form input[name=mode]');
+    const remote = document.getElementById('remote-fields');
+    function syncMode() { const m = document.querySelector('#system-form input[name=mode]:checked').value; remote.style.display = (m === 'remote') ? '' : 'none'; }
+    modes.forEach(r => r.addEventListener('change', syncMode)); syncMode();
+})();
+</script>
+{% endblock %}

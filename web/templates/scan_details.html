@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Scan #{{ scan.id }} — {{ scan.target }}{% endblock %}
+{% block content %}
+
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Scan #{{ scan.id }}</span>
+        <h1>{{ scan.target }}</h1>
+    </div>
+    <div class="top-right">
+        <span class="badge status-{{ scan.status }}" id="scan-status-badge">{{ scan.status }}</span>
+        <a class="btn secondary" href="{{ url_for('scan_pdf', scan_id=scan.id) }}">Download PDF Report</a>
+        <a class="btn" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    </div>
+</div>
+
+{% if scan.status == 'failed' %}
+<div class="notice notice-error"><b>Scan failed.</b> {{ scan.status_detail or "No further detail was recorded." }}</div>
+{% elif scan.status in ('queued', 'running') %}
+<div class="notice">This scan is {{ scan.status }}. Results will appear when it completes.<span id="scan-progress"> {% if scan.scan_info and scan.scan_info.progress %}{{ scan.scan_info.progress }}{% endif %}</span></div>
+{% elif scan.status_detail %}
+<div class="notice notice-warn"><b>{{ "Network scan summary." if scan.scan_type == 'network' else "Results may be incomplete or limited." }}</b> {{ scan.status_detail }}</div>
+{% endif %}
+<div class="notice" style="font-size:12px;">
+    {% if scan.scan_type == 'software' and scan.scan_info and scan.scan_info.mode == 'windows-inventory' %}
+    <b>Assessment scope:</b> installed-application scan of the computer running the SentriX server ({{ (scan.scan_info.host or {}).computer_name or 'unknown' }}).
+    Applications were discovered from the Windows registry (read-only) and assessed against NVD. Only product and version are known, so a
+    CVE match shows the version is in a vulnerable range, not that the software is exploitable; portable applications and software
+    without an uninstall entry are not included. No result here proves the computer is secure.
+    {% elif scan.scan_type == 'system-windows' %}
+    <b>Assessment scope:</b> Windows threat assessment of the computer running the SentriX server, performed by Microsoft Defender
+    Antivirus through its PowerShell cmdlets. SentriX has no antivirus engine of its own and never removes, quarantines or executes
+    files. An empty result is not proof the computer is free of malware.
+    {% elif scan.scan_type == 'software' %}
+    <b>Assessment scope:</b> software scan - the software you entered was assessed against NVD. Nothing was inspected on any
+    machine, so applicability depends entirely on the accuracy of the vendor, product and version supplied.
+    {% elif scan.scan_type in ('system-local', 'system-remote') %}
+    <b>Assessment scope:</b> system scan ({{ 'local' if scan.scan_type == 'system-local' else 'remote over SSH, key authentication' }}) -
+    the machine's own configuration, exposure and installed software were inspected with read-only commands. Checks marked
+    <i>unknown</i> / <i>not assessed</i> were NOT verified; passing every check performed does not prove the system is secure.
+    {% else %}
+    <b>Assessment scope:</b> remote, unauthenticated assessment (Nmap service/version detection correlated with NVD).
+    No local or credentialed checks were performed, and checks marked <i>unknown</i> were not verified.
+    {% endif %}
+</div>
+
+<div class="grid">
+    <div class="card neutral-card">
+        <p class="card-label">Total Risk Score</p>
+        <p class="card-value" id="scan-risk-score">{{ scan.total_risk }}</p>
+    </div>
+    <div class="card critical-card">
+        <p class="card-label">Critical</p>
+        <p class="card-value critical">{{ counts.CRITICAL }}</p>
+    </div>
+    <div class="card high-card">
+        <p class="card-label">High</p>
+        <p class="card-value high">{{ counts.HIGH }}</p>
+    </div>
+    <div class="card medium-card">
+        <p class="card-label">Medium</p>
+        <p class="card-value medium">{{ counts.MEDIUM }}</p>
+    </div>
+</div>
+
+{% if extra %}{% include "_scan_extra.html" %}{% endif %}
+
+{% if scan.scan_type != 'system-windows' %}
+<p class="section-label" id="findings">{{ 'CVE findings for installed software' if scan.scan_type in ('system-local', 'system-remote') else 'Findings' }} (sorted by contextual priority)</p>
+{% if vulns|length > 5 %}<input type="text" id="finding-filter" placeholder="Filter findings by application, CVE or text..." style="max-width:340px; margin-bottom:8px;">{% endif %}
+<table id="findings-table">
+    <tr>
+        <th>Priority</th>
+        <th>Port</th>
+        <th>Service</th>
+        <th>CVE / CWE</th>
+        <th>Severity</th>
+        <th>CVSS</th>
+        <th>EPSS</th>
+        <th>Confidence</th>
+        <th>Description</th>
+    </tr>
+    {% for v in vulns %}
+    <tr>
+        <td>
+            <span class="badge priority-{{ v.priority_label }}">{{ v.contextual_priority }}</span>
+            {% if v.is_kev %}<div style="font-size:10px; color: var(--critical); font-weight:700; margin-top:4px;">⚠ KNOWN EXPLOITED</div>{% endif %}
+            <details style="margin-top:4px; font-size:11px; color: var(--muted);">
+                <summary style="cursor:pointer;">Factors</summary>
+                <div style="margin-top:4px;">
+                    CVSS {{ v.cvss_score if v.cvss_score is not none else "n/a" }} ·
+                    EPSS {{ "%.1f%%"|format(v.epss_score * 100) if v.epss_score is not none else "n/a" }} ·
+                    KEV {{ "yes" if v.is_kev else "no" }}<br>
+                    Asset: {{ scan.asset_exposure or "n/a" }} exposure, {{ scan.asset_criticality or "n/a" }} criticality,
+                    {{ scan.asset_business_impact or "n/a" }} business impact<br>
+                    Match confidence {{ "%.2f"|format(v.match_confidence) if v.match_confidence is not none else "n/a" }}
+                    (scales the score down for weaker matches)
+                </div>
+            </details>
+        </td>
+        <td>{{ v.port_number if v.port_number is not none else '—' }}</td>
+        <td>
+            {{ v.service }}
+            {% if v.match_evidence %}
+            <div class="subtle">Matched: {{ v.match_evidence.product or "—" }}{% if v.match_evidence.vendor %} ({{ v.match_evidence.vendor }}){% endif %}{% if v.match_evidence.version %} {{ v.match_evidence.version }}{% endif %}{% if v.match_evidence.cpe_confirmed %} · CPE-confirmed{% endif %}</div>
+            {% endif %}
+        </td>
+        <td>
+            {{ v.cve_id or "—" }}
+            {% if v.cwe_name %}<div style="font-size:11px; color: var(--muted); margin-top:2px;">{{ v.cwe_name }}</div>{% endif %}
+        </td>
+        <td><span class="badge sev-{{ v.severity }}">{{ v.severity }}</span></td>
+        <td>{{ v.cvss_score if v.cvss_score is not none else "—" }}</td>
+        <td>{{ "%.1f%%"|format(v.epss_score * 100) if v.epss_score is not none else "—" }}</td>
+        <td>
+            {% if v.applicability_status %}
+            <div style="margin-bottom:4px;"><span class="badge applic-{{ v.applicability_status }}" title="{{ v.applicability_reason or '' }}">{{ v.applicability_status }}</span></div>
+            {% endif %}
+            {% if v.confidence_pct is not none %}
+            <span class="badge">{{ v.confidence_label }} ({{ v.confidence_pct }}%)</span>
+            {% if v.confidence_reason %}
+            <details style="margin-top:4px; font-size:11px; color: var(--muted);">
+                <summary style="cursor:pointer;">Reason</summary>
+                <div style="margin-top:4px;">{{ v.confidence_reason }}</div>
+                {% if v.applicability_reason %}<div style="margin-top:4px;"><b>Applicability:</b> {{ v.applicability_reason }}</div>{% endif %}
+            </details>
+            {% endif %}
+            {% else %}
+            —
+            {% endif %}
+        </td>
+        <td class="desc-cell">
+            {{ v.description }}
+            {% if v.remediation %}
+            <div class="remediation-box"><b>Remediation:</b> {{ v.remediation }}</div>
+            {% endif %}
+        </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" style="text-align:center; color: var(--muted);">
+        {% if scan.status == 'completed' %}
+        No vulnerabilities were identified by the checks that ran for this scan.
+        {% if scan.status_detail %}See the note above - this result may be incomplete.{% endif %}
+        This is not proof that the target is secure.
+        {% elif scan.status == 'failed' %}
+        No results - the scan did not complete.
+        {% else %}
+        Scan in progress.
+        {% endif %}
+    </td></tr>
+    {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const ff = document.getElementById('finding-filter');
+    if (!ff) return;
+    ff.addEventListener('input', () => {
+        const q = ff.value.trim().toLowerCase();
+        document.querySelectorAll('#findings-table tr').forEach((r, i) => { if (i) r.style.display = (!q || r.textContent.toLowerCase().includes(q)) ? '' : 'none'; });
+    });
+})();
+</script>
+<script>
+{% if scan.status in ('queued', 'running') %}
+function pollStatus() {
+    fetch("{{ url_for('scan_status', scan_id=scan.id) }}")
+        .then(r => r.json())
+        .then(data => {
+            const pr = document.getElementById('scan-progress');
+            if (pr && data.progress) pr.textContent = ' ' + data.progress;
+            if (data.status !== '{{ scan.status }}') {
+                document.getElementById('scan-status-badge').textContent = data.status;
+                document.getElementById('scan-status-badge').className = 'badge status-' + data.status;
+                document.getElementById('scan-risk-score').textContent = data.total_risk;
+                location.reload();
+            }
+        })
+        .catch(() => {});
+}
+setInterval(pollStatus, 4000);
+{% endif %}
+</script>
+{% endblock %}

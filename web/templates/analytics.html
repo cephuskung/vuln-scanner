@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Security Posture</span>
+        <h1>Analytics</h1>
+    </div>
+    <div class="top-right">
+        <form method="POST" action="{{ url_for('analytics_recompute') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn secondary">Recompute Now</button>
+        </form>
+    </div>
+</div>
+{% if latest %}
+<div class="grid">
+    <div class="card neutral-card">
+        <p class="card-label">Overall Score</p>
+        <p class="card-value">{{ latest.overall_score }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Network Security</p>
+        <p class="card-value" style="font-size:24px;">{{ latest.network_score }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Host Security</p>
+        <p class="card-value" style="font-size:24px;">{{ latest.host_score }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Web Security</p>
+        <p class="card-value" style="font-size:24px;">{{ latest.web_score }}</p>
+    </div>
+</div>
+<div class="grid" style="grid-template-columns: repeat(2, 1fr); max-width: 600px;">
+    <div class="card neutral-card">
+        <p class="card-label">Patch Management</p>
+        <p class="card-value" style="font-size:24px;">{{ latest.patch_score }}</p>
+    </div>
+    <div class="card neutral-card">
+        <p class="card-label">Configuration Security</p>
+        <p class="card-value" style="font-size:24px;">{{ latest.config_score }}</p>
+    </div>
+</div>
+{% else %}
+<div class="panel" style="text-align:center; color: var(--muted); padding: 32px;">
+    No posture snapshot yet — click <b>Recompute Now</b> above, or wait for
+    the app's daily background job to run one automatically.
+</div>
+{% endif %}
+<p class="section-label">Posture Trend</p>
+<div class="chart-panel">
+    <canvas id="postureTrend" height="90"></canvas>
+</div>
+<p style="color: var(--muted); font-size: 12px; margin-top: 16px; max-width: 700px;">
+    Scores reflect the most recent completed scan per asset. Patch Management and
+    Configuration Security are heuristic estimates (based on severity mix of current
+    findings) rather than dedicated patch-age or configuration audits — treat them as
+    directional signals, not precise measurements.
+</p>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+fetch('/api/posture-trend')
+    .then(r => r.json())
+    .then(data => {
+        new Chart(document.getElementById('postureTrend'), {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: [
+                    { label: 'Overall', data: data.overall, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.08)', fill: true, tension: 0.3 },
+                    { label: 'Network', data: data.network, borderColor: '#16a34a', tension: 0.3 },
+                    { label: 'Host', data: data.host, borderColor: '#d97706', tension: 0.3 },
+                    { label: 'Web', data: data.web, borderColor: '#dc2626', tension: 0.3 },
+                    { label: 'Patch Mgmt', data: data.patch, borderColor: '#b58900', tension: 0.3 },
+                    { label: 'Config', data: data.config, borderColor: '#8a93a3', tension: 0.3 },
+                ]
+            },
+            options: {
+                scales: { y: { min: 0, max: 100 } },
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    });
+</script>
+{% endblock %}

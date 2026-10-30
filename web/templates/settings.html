@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Configuration</span>
+        <h1>Risk Scoring Weights</h1>
+    </div>
+</div>
+<p style="color: var(--muted); font-size: 13px; margin: -8px 0 20px 4px;">
+    CISA Known Exploited Vulnerabilities cache: <b>{{ kev_count }}</b> CVEs loaded.
+    EPSS exploit-prediction cache: <b>{{ epss_count }}</b> CVE scores loaded.
+    Weights below control the <b>contextual priority</b> score shown on scan detail pages
+    — how urgently a finding should be fixed, beyond raw CVSS. Weights are
+    required to total exactly 1.00 - changes that do not add up to 1.00 are rejected.
+</p>
+<div class="panel">
+    <form method="POST" action="{{ url_for('update_weights') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row">
+            <div style="flex:1;">
+                <label for="cvss">CVSS Score</label>
+                <input type="number" step="0.01" id="cvss" name="cvss" value="{{ weights.cvss }}">
+            </div>
+            <div style="flex:1;">
+                <label for="exploit">Known Exploitation (KEV)</label>
+                <input type="number" step="0.01" id="exploit" name="exploit" value="{{ weights.exploit }}">
+            </div>
+        </div>
+        <div class="row">
+            <div style="flex:1;">
+                <label for="epss">Predicted Exploitation (EPSS)</label>
+                <input type="number" step="0.01" id="epss" name="epss" value="{{ weights.epss }}">
+            </div>
+            <div style="flex:1;">
+                <label for="exposure">Internet Exposure</label>
+                <input type="number" step="0.01" id="exposure" name="exposure" value="{{ weights.exposure }}">
+            </div>
+        </div>
+        <div class="row">
+            <div style="flex:1;">
+                <label for="criticality">Asset Criticality</label>
+                <input type="number" step="0.01" id="criticality" name="criticality" value="{{ weights.criticality }}">
+            </div>
+            <div style="flex:1;">
+                <label for="business_impact">Business Impact</label>
+                <input type="number" step="0.01" id="business_impact" name="business_impact" value="{{ weights.business_impact }}">
+            </div>
+        </div>
+        <div class="row">
+            <div style="flex:1;">
+                <label for="complexity">Attack Complexity (low = worse)</label>
+                <input type="number" step="0.01" id="complexity" name="complexity" value="{{ weights.complexity }}">
+            </div>
+            <div style="flex:1;">
+                <label for="blast_radius">Blast Radius (assets affected)</label>
+                <input type="number" step="0.01" id="blast_radius" name="blast_radius" value="{{ weights.blast_radius }}">
+            </div>
+        </div>
+        <button type="submit" class="btn" style="margin-top: 18px;">Save Weights</button>
+    </form>
+</div>
+{% endblock %}

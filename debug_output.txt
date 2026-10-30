@@ -1,0 +1,74 @@
+/home/kung1400/vuln-scanner/venv/lib/python3.10/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (7.4.3)/charset_normalizer (3.4.9) doesn't match a supported version!
+  warnings.warn(
+Enter target IP: [CVE_DEBUG] detected identity -> product='ftpd.bin round-robin file server' vendor='' full_version='3.4.0r16' (raw product='ftpd.bin round-robin file server', vendor=None, cpe=None)
+[CVE_DEBUG] detected identity -> product='F5 BIG-IP load balancer http proxy' vendor='' full_version='' (raw product='F5 BIG-IP load balancer http proxy', vendor=None, cpe=None)
+[CVE_DEBUG] detected identity -> product='http_server' vendor='apache' full_version='2.4.68' (raw product='Apache httpd', vendor='apache', cpe='cpe:/a:apache:http_server:2.4.68')
+[CVE_DEBUG] detected identity -> product='F5 BIG-IP load balancer http proxy' vendor='' full_version='' (raw product='F5 BIG-IP load balancer http proxy', vendor=None, cpe=None)
+
+Scan Results:
+{
+    "target": "81.169.145.156",
+    "os": null,
+    "open_ports": [
+        {
+            "port": 21,
+            "protocol": "tcp",
+            "service": "ftp",
+            "product": "ftpd.bin round-robin file server",
+            "vendor": null,
+            "version": "3.4.0r16",
+            "cpe": null,
+            "extrainfo": null,
+            "method": "probed",
+            "conf": "10"
+        },
+        {
+            "port": 80,
+            "protocol": "tcp",
+            "service": "http-proxy",
+            "product": "F5 BIG-IP load balancer http proxy",
+            "vendor": null,
+            "version": null,
+            "cpe": null,
+            "extrainfo": null,
+            "method": "probed",
+            "conf": "10"
+        },
+        {
+            "port": 443,
+            "protocol": "tcp",
+            "service": "http",
+            "product": "Apache httpd",
+            "vendor": "apache",
+            "version": "2.4.68",
+            "cpe": "cpe:/a:apache:http_server:2.4.68",
+            "extrainfo": "(Unix)",
+            "method": "probed",
+            "conf": "10"
+        },
+        {
+            "port": 8080,
+            "protocol": "tcp",
+            "service": "http-proxy",
+            "product": "F5 BIG-IP load balancer http proxy",
+            "vendor": null,
+            "version": null,
+            "cpe": null,
+            "extrainfo": null,
+            "method": "probed",
+            "conf": "10"
+        }
+    ]
+}
+
+Risk Summary
+-------------
+CRITICAL : 0
+HIGH : 1
+MEDIUM : 3
+LOW : 0
+Unknown : 0
+
+Total Risk Score: 25.0
+
+Report saved to scan_report.json

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+    <div class="panel">
+        <h1>Welcome back</h1>
+        <p class="sub">Log in to the security operations dashboard.</p>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autofocus>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+            <button type="submit" class="btn">Log in</button>
+        </form>
+    </div>
+    <p style="text-align:center; color: var(--muted); font-size: 13px;">
+        <a href="{{ url_for('register') }}" style="color: var(--accent);">Create the first admin account</a>
+    </p>
+</div>
+{% endblock %}

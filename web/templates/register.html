@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Create account{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+    <div class="panel">
+        <h1>Create admin account</h1>
+        <p class="sub">This is only available until the first account is created.</p>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autofocus>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required minlength="8">
+            <button type="submit" class="btn">Create account</button>
+        </form>
+    </div>
+    <p style="text-align:center; color: var(--muted); font-size: 13px;">
+        <a href="{{ url_for('login') }}" style="color: var(--accent);">Back to log in</a>
+    </p>
+</div>
+{% endblock %}

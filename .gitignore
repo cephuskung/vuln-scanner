@@ -1,0 +1,10 @@
+# secrets and local config
+.env
+# python / tooling
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# scan artefacts
+scan_report.json
+*.xml

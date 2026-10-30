@@ -1,0 +1,266 @@
+{# Scan-type specific sections for Software and System scans (shared by the scan page). #}
+{% set info = extra.info %}
+{% if extra.kind == 'windows_inventory' %}
+{% set host = info.host or {} %}{% set cnt = info.counts or {} %}
+<p class="section-label">Computer inspected</p>
+<div class="sysgrid">
+    <div class="kv"><b>Computer</b>{{ host.computer_name or 'unknown' }}</div>
+    <div class="kv"><b>Operating system</b>{{ host.os or 'unknown' }}</div>
+    <div class="kv"><b>Scope</b>The computer running the SentriX server process</div>
+    <div class="kv"><b>Inventory source</b>Windows registry (read-only) - {{ info.inventory_status or 'unknown' }}</div>
+</div>
+{% if info.progress and scan.status in ('queued', 'running') %}<div class="notice"><b>Progress:</b> {{ info.progress }}</div>{% endif %}
+
+<p class="section-label">Collection details <span class="opt">- where the application list came from</span></p>
+<table>
+    <tr><th>Registry location</th><th>Result</th><th>Entries</th><th>Detail</th></tr>
+    {% for l in info.locations or [] %}
+    <tr><td>{{ l.label }}</td>
+        <td><span class="badge {{ 'chk-pass' if l.status == 'ok' else ('chk-info' if l.status == 'not_found' else 'chk-unknown') }}">{{ l.status|replace('_', ' ') }}</span></td>
+        <td>{{ l.entries_read }}</td><td style="font-size:12px;">{{ l.detail or '' }}</td></tr>
+    {% endfor %}
+</table>
+{% if info.skipped %}<p class="subtle">Not listed as applications: {{ info.skipped.updates }} update/patch entr{{ 'y' if info.skipped.updates == 1 else 'ies' }}, {{ info.skipped.nameless }} entr{{ 'y' if info.skipped.nameless == 1 else 'ies' }} without a name; {{ info.skipped.duplicates_merged }} duplicate entr{{ 'y' if info.skipped.duplicates_merged == 1 else 'ies' }} merged.</p>{% endif %}
+{% for n in info.notes or [] %}<p class="subtle">&bull; {{ n }}</p>{% endfor %}
+
+{% if cnt %}
+<p class="section-label">Assessment summary</p>
+<div class="sysgrid">
+    <div class="kv"><b>Applications discovered</b>{{ cnt.discovered }}</div>
+    <div class="kv"><b>Assessed against NVD</b>{{ cnt.assessed }} ({{ cnt.assessed_products }} distinct products)</div>
+    <div class="kv"><b>With findings</b>{{ cnt.with_findings }} ({{ cnt.findings }} CVE matches)</div>
+    <div class="kv"><b>Probable / Potential</b>{{ (info.tiers or {}).get('PROBABLE', 0) }} / {{ (info.tiers or {}).get('POTENTIAL', 0) }}</div>
+    <div class="kv"><b>Confirmed / Indeterminate</b>{{ (info.tiers or {}).get('CONFIRMED', 0) }} / {{ (info.tiers or {}).get('INDETERMINATE', 0) }}</div>
+    <div class="kv"><b>Unknown applicability (no version)</b>{{ (cnt.not_assessed or {}).get('no_version', 0) }}</div>
+    <div class="kv"><b>NVD lookup failed</b>{{ cnt.lookup_failed }}</div>
+    <div class="kv"><b>Not assessed (other)</b>{{ ((cnt.not_assessed or {}).values()|sum) - (cnt.not_assessed or {}).get('no_version', 0) - (cnt.not_assessed or {}).get('nvd_unavailable', 0) }}</div>
+</div>
+<p class="subtle">A registry inventory records only the product and version, so no finding here is CONFIRMED: a CVE match means the version falls in a vulnerable range, not that the software is exploitable on this computer.</p>
+{% endif %}
+
+<p class="section-label">Installed applications <span class="opt">- {{ extra.inventory_counts.total }} discovered, {{ extra.inventory_counts.assessed }} assessed</span></p>
+<div class="row" style="margin-bottom:8px; gap:8px;">
+    <input type="text" id="inv-filter" placeholder="Filter applications..." style="max-width:280px;">
+    <select id="inv-status" style="max-width:240px;">
+        <option value="">All applications</option>
+        <option value="findings">With findings</option>
+        <option value="assessed">Assessed, no CVEs matched</option>
+        <option value="unknown">Unknown applicability (no version)</option>
+        <option value="notassessed">Not assessed / lookup failed</option>
+    </select>
+</div>
+<div style="overflow-x:auto;">
+<table id="inv-table">
+    <tr><th>Application</th><th>Publisher</th><th>Version</th><th>Installed</th><th>Source</th><th>Assessment</th><th>CVEs</th><th>Note</th></tr>
+    {% for s in extra.inventory %}
+    {% set cls = 'findings' if s.findings_count else ('assessed' if s.assessment == 'assessed' else ('unknown' if s.assessment_reason == 'no_version' else 'notassessed')) %}
+    <tr data-cls="{{ cls }}" data-text="{{ (s.product ~ ' ' ~ (s.vendor or '') ~ ' ' ~ (s.version or ''))|lower }}">
+        <td>{{ s.product }}</td><td>{{ s.vendor or '—' }}</td>
+        <td>{{ s.version or 'unknown' }}{% if s.collection_status == 'partial' %}<div class="subtle">partial registry data</div>{% endif %}</td>
+        <td>{{ s.install_date or '—' }}</td><td style="font-size:11px;">{{ s.inventory_source or '' }}</td>
+        <td>{% if s.assessment == 'assessed' %}<span class="badge chk-pass">assessed</span>
+            {% elif s.assessment == 'lookup_failed' %}<span class="badge chk-fail">lookup failed</span>
+            {% elif s.assessment_reason == 'no_version' %}<span class="badge chk-unknown">unknown applicability</span>
+            {% else %}<span class="badge chk-unknown">not assessed</span>{% endif %}
+            {% if s.identity_source %}<div class="subtle">{{ 'known product' if s.identity_source == 'catalog' else 'matched by name only' }}</div>{% endif %}</td>
+        <td>{% if s.findings_count %}<a href="#findings" class="inv-open" data-name="{{ s.product }}">{{ s.findings_count }}</a>{% else %}{{ s.findings_count }}{% endif %}</td>
+        <td style="font-size:12px;">{{ s.note or '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" style="text-align:center; color: var(--muted);">No applications were discovered.</td></tr>
+    {% endfor %}
+</table>
+</div>
+<script>
+(function () {
+    const rows = Array.from(document.querySelectorAll('#inv-table tr[data-cls]'));
+    const f = document.getElementById('inv-filter'), st = document.getElementById('inv-status');
+    function apply() {
+        const q = f.value.trim().toLowerCase(), c = st.value;
+        rows.forEach(r => { r.style.display = ((!q || r.dataset.text.includes(q)) && (!c || r.dataset.cls === c)) ? '' : 'none'; });
+    }
+    f.addEventListener('input', apply); st.addEventListener('change', apply);
+    // "open findings": jump to the findings table filtered to this application
+    document.querySelectorAll('.inv-open').forEach(a => a.addEventListener('click', () => {
+        const ff = document.getElementById('finding-filter');
+        if (ff) { ff.value = a.dataset.name.split(' ')[0]; ff.dispatchEvent(new Event('input')); }
+    }));
+})();
+</script>
+
+{% elif extra.kind == 'windows_defender' %}
+{% set host = info.host or {} %}{% set prot = info.protection or {} %}{% set sc = info.scan or {} %}{% set det = info.detections or {} %}
+<p class="section-label">Computer inspected</p>
+<div class="sysgrid">
+    <div class="kv"><b>Computer</b>{{ host.computer_name or 'unknown' }}</div>
+    <div class="kv"><b>Operating system</b>{{ host.os or 'unknown' }}</div>
+    <div class="kv"><b>Engine</b>Microsoft Defender Antivirus</div>
+    <div class="kv"><b>Requested</b>{{ {'status': 'Protection status only', 'quick': 'Quick Scan', 'full': 'Full Scan', 'custom': 'Custom Scan'}.get(info.action, info.action) }}{% if info.path %}: {{ info.path }}{% endif %}</div>
+</div>
+{% if info.progress and scan.status in ('queued', 'running') %}<div class="notice"><b>Progress:</b> {{ info.progress }}</div>{% endif %}
+
+<p class="section-label">Protection status</p>
+<div class="notice {{ 'notice-warn' if prot.state != 'active' else '' }}"><b>{{ (prot.state or 'unknown')|capitalize }}.</b> {{ prot.summary }}
+    {% if prot.detail %}<div class="subtle">{{ prot.detail }}</div>{% endif %}</div>
+
+<p class="section-label">Scan result</p>
+{% set oc = sc.outcome %}
+{% if oc == 'scan_finished' %}
+<div class="notice"><b>Defender reports the scan finished.</b>
+    {% if det.available and not det.current_scan %}No detections attributable to this scan were reported. This is not proof the computer is free of malware: Defender only reports what it finds.{% elif not det.available %}Threat detection records could not be read, so findings are incomplete.{% endif %}</div>
+{% elif oc == 'completion_unverified' %}
+<div class="notice notice-warn"><b>Completion NOT established.</b> The scan command returned without an error, but SentriX could not confirm that Defender finished. Do not treat the absence of detections as a clean result.</div>
+{% elif oc == 'scan_incomplete' %}
+<div class="notice notice-error"><b>Scan INCOMPLETE.</b> It did not finish, so results are partial.</div>
+{% elif oc == 'scan_failed' %}
+<div class="notice notice-error"><b>The scan did not run.</b></div>
+{% else %}
+<div class="notice"><b>No scan was performed</b> {% if info.action == 'status' %}(protection status only){% else %}(see the protection status above){% endif %}.</div>
+{% endif %}
+{% if sc.error %}<p class="subtle">{{ sc.error.message }}</p>{% endif %}
+{% if sc.started_at %}<p class="subtle">Command ran from {{ sc.started_at }} to {{ sc.ended_at }} ({{ sc.duration_seconds }} s).</p>{% endif %}
+{% if sc.completion %}
+<details><summary>How completion was assessed</summary>
+    {% for e in sc.completion.evidence %}<p class="subtle">&bull; {{ e }}</p>{% endfor %}
+    {% for e in sc.completion.caveats %}<p class="subtle">&bull; {{ e }}</p>{% endfor %}
+</details>{% endif %}
+
+<p class="section-label">Protection checks</p>
+<table>
+    <tr><th>Result</th><th>Check</th><th>Priority</th><th>Evidence</th></tr>
+    {% for c in extra.checks %}
+    <tr>
+        <td><span class="badge chk-{{ c.status }}">{{ c.status|replace('_', ' ') }}</span>
+            {% if c.status == 'fail' and c.severity %}<div class="subtle">{{ c.severity }}</div>{% endif %}
+            {% if c.status == 'unknown' and c.requires %}<div class="subtle">needs {{ c.requires }}</div>{% endif %}</td>
+        <td>{{ c.title }}<div class="subtle">{{ c.check_id }}</div></td>
+        <td>{% if c.priority_label %}<span class="badge priority-{{ c.priority_label }}">{{ c.contextual_priority }}</span>{% else %}—{% endif %}</td>
+        <td style="font-size:12px;">{{ c.evidence }}
+            {% if c.status == 'fail' and c.remediation %}<div class="remediation-box"><b>Remediation:</b> {{ c.remediation }}</div>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; color: var(--muted);">No check results recorded.</td></tr>{% endfor %}
+</table>
+
+<p class="section-label">Threat detections <span class="opt">- from Microsoft Defender's records{% if det.total is defined %}: {{ det.current_scan }} during this scan, {{ det.historical }} historical, {{ det.unattributed }} unattributed, {{ det.needs_attention }} unresolved{% endif %}</span></p>
+{% if det.available is defined and not det.available %}<div class="notice notice-warn">Detection records could not be read: {{ det.error }}</div>{% endif %}
+<table>
+    <tr><th>Attribution</th><th>Threat</th><th>Severity</th><th>Affected resource</th><th>Detected</th><th>Status / action</th><th>Evidence</th></tr>
+    {% for t in extra.threats %}
+    <tr>
+        <td><span class="badge {{ 'chk-fail' if t.attribution == 'current_scan' else 'chk-info' }}">{{ {'current_scan': 'during this scan', 'historical': 'historical', 'unattributed': 'unattributed'}.get(t.attribution, t.attribution) }}</span>
+            {% if t.in_scan_scope is false %}<div class="subtle">outside scanned path</div>{% endif %}</td>
+        <td>{{ t.threat_name or ('threat id ' ~ t.threat_id if t.threat_id else 'unknown') }}<div class="subtle">detection {{ t.detection_id or '?' }}</div></td>
+        <td><span class="badge sev-{{ t.severity }}">{{ t.defender_severity }}</span></td>
+        <td style="font-size:12px; word-break:break-all;">{% for r in t.resources or [] %}<div>{{ r.type }}: {{ r.value }}</div>{% else %}—{% endfor %}{% if t.process_name %}<div class="subtle">process: {{ t.process_name }}</div>{% endif %}</td>
+        <td class="time-cell">{{ t.initial_detection_time or '—' }}</td>
+        <td>{{ t.status }}{% if t.needs_attention %}<div class="subtle" style="color:var(--critical);">unresolved</div>{% endif %}
+            {% if t.action_success is not none %}<div class="subtle">action {{ 'succeeded' if t.action_success else 'failed' }}</div>{% endif %}
+            {% if t.execution_status %}<div class="subtle">execution: {{ t.execution_status }}</div>{% endif %}</td>
+        <td style="font-size:12px;"><details><summary>Defender fields</summary>
+            {% for k, v in (t.evidence or {}).items() %}{% if k != 'Resources' and k != 'ThreatCatalogue' %}<div class="subtle">{{ k }}: {{ v }}</div>{% endif %}{% endfor %}</details>
+            <div class="remediation-box"><b>Guidance:</b> {{ t.remediation }}</div></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" style="text-align:center; color: var(--muted);">
+        {% if det.available is defined and not det.available %}Detection records unavailable.{% else %}Defender holds no detection records to show.{% if oc == 'scan_finished' %} This is not proof the computer is free of malware.{% endif %}{% endif %}</td></tr>
+    {% endfor %}
+</table>
+{% for l in info.limitations or [] %}<p class="subtle">&bull; {{ l }}</p>{% endfor %}
+
+{% elif extra.kind == 'software' %}
+<p class="section-label">Software assessed</p>
+<table>
+    <tr><th>Software</th><th>Version</th><th>Identity used for NVD</th><th>Result</th><th>CVEs</th><th>Note</th></tr>
+    {% for s in extra.inventory %}
+    <tr>
+        <td>{{ (s.vendor ~ ' ') if s.vendor else '' }}{{ s.product }}</td>
+        <td>{{ s.version or 'unknown' }}</td>
+        <td>{% if s.cpe_vendor %}{{ s.cpe_vendor }}:{{ s.cpe_product }}{% else %}name only{% endif %}</td>
+        <td>
+            {% if s.assessment == 'assessed' %}<span class="badge chk-pass">assessed</span>
+            {% else %}<span class="badge chk-unknown">not assessed</span>{% endif %}
+        </td>
+        <td>{{ s.findings_count }}</td>
+        <td style="font-size:12px;">{{ s.note or '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="text-align:center; color: var(--muted);">No software items recorded.</td></tr>
+    {% endfor %}
+</table>
+
+{% elif extra.kind == 'system' %}
+<p class="section-label">System information</p>
+<div class="sysgrid">
+    <div class="kv"><b>Operating system</b>{{ info.os or 'unknown' }}</div>
+    <div class="kv"><b>Kernel / arch</b>{{ info.kernel or '?' }} / {{ info.arch or '?' }}</div>
+    <div class="kv"><b>Hostname</b>{{ info.hostname or '?' }}</div>
+    <div class="kv"><b>Uptime</b>{{ info.uptime_days if info.uptime_days is not none else '?' }} days</div>
+    <div class="kv"><b>Mode</b>{{ 'Local (the SentriX server)' if info.mode == 'local' else 'Remote over SSH' }}</div>
+    <div class="kv"><b>Privilege</b>{{ {'root': 'root', 'sudo': 'sudo (passwordless)', 'none': 'unprivileged'}.get(info.elevation, info.elevation or '?') }}</div>
+    {% if info.mode == 'remote' %}<div class="kv"><b>Host key</b>{{ 'verified against supplied fingerprint' if info.host_key_verified else 'NOT verified' }}</div>{% endif %}
+    <div class="kv"><b>Software inventory</b>{{ extra.inventory_counts.total }} packages{% if info.package_manager %} ({{ info.package_manager }}){% endif %}</div>
+</div>
+
+<p class="section-label">Assessment coverage <span class="opt">- what ran, and what could not</span></p>
+<table>
+    <tr><th>Area</th><th>Status</th><th>Detail</th><th>Needs</th></tr>
+    {% for c in info.coverage or [] %}
+    <tr>
+        <td>{{ c.name|replace('_', ' ') }}</td>
+        <td><span class="badge {{ 'chk-pass' if c.status == 'ran' else 'chk-unknown' }}">{{ c.status }}</span></td>
+        <td style="font-size:12px;">{{ c.detail }}</td>
+        <td style="font-size:12px;">{{ c.requires or '' }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<p class="section-label">Security configuration checks</p>
+<table>
+    <tr><th>Result</th><th>Check</th><th>Priority</th><th>Evidence</th></tr>
+    {% for c in extra.checks %}
+    <tr>
+        <td><span class="badge chk-{{ c.status }}">{{ c.status|replace('_', ' ') }}</span>
+            {% if c.status == 'fail' and c.severity %}<div class="subtle">{{ c.severity }}</div>{% endif %}
+            {% if c.status == 'unknown' and c.requires %}<div class="subtle">needs {{ c.requires }}</div>{% endif %}</td>
+        <td>{{ c.title }}<div class="subtle">{{ c.check_id }}</div></td>
+        <td>{% if c.priority_label %}<span class="badge priority-{{ c.priority_label }}">{{ c.contextual_priority }}</span>{% else %}—{% endif %}</td>
+        <td style="font-size:12px;">{{ c.evidence }}
+            {% if c.status == 'fail' and c.remediation %}<div class="remediation-box"><b>Remediation:</b> {{ c.remediation }}</div>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center; color: var(--muted);">No check results recorded.</td></tr>
+    {% endfor %}
+</table>
+
+{% if info.listeners %}
+<p class="section-label">Listening services</p>
+<table>
+    <tr><th>Protocol</th><th>Address</th><th>Port</th><th>Exposure</th><th>Process</th></tr>
+    {% for l in info.listeners %}
+    <tr>
+        <td>{{ l.proto }}</td><td>{{ l.address }}</td><td>{{ l.port }}</td>
+        <td>{{ {'all': 'all interfaces', 'loopback': 'loopback only', 'specific': 'specific address'}.get(l.scope, l.scope) }}</td>
+        <td>{{ l.process or 'unknown (needs root)' }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+<p class="section-label">Installed software assessed against NVD
+    <span class="opt">- {{ extra.inventory_counts.assessed }} of {{ extra.inventory_counts.total }} packages have a known NVD identity; the rest are listed in the inventory but were not assessed</span></p>
+<table>
+    <tr><th>Package</th><th>Package version</th><th>Upstream version</th><th>NVD identity</th><th>Result</th><th>CVEs</th></tr>
+    {% for s in extra.inventory %}
+    <tr>
+        <td>{{ s.product }}</td><td>{{ s.version }}</td><td>{{ s.upstream_version or '?' }}</td>
+        <td>{{ s.cpe_vendor }}:{{ s.cpe_product }}</td>
+        <td>{% if s.assessment == 'assessed' %}<span class="badge chk-pass">assessed</span>
+            {% else %}<span class="badge chk-unknown">not assessed</span>{% endif %}
+            {% if s.note %}<div class="subtle">{{ s.note }}</div>{% endif %}</td>
+        <td>{{ s.findings_count }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="text-align:center; color: var(--muted);">No software was assessed (inventory unavailable or no packages with a known NVD identity).</td></tr>
+    {% endfor %}
+</table>
+{% endif %}

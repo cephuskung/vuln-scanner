@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Vulnerabilities{% endblock %}
+{% block content %}
+
+<div class="top">
+    <div class="top-left">
+        <span class="eyebrow"><span class="pulse-dot"></span>Cross-Scan View</span>
+        <h1>All Vulnerabilities</h1>
+    </div>
+</div>
+
+<form class="filter-bar" method="GET" action="{{ url_for('vulnerabilities_view') }}">
+    <input type="text" name="search" placeholder="Search by asset, IP, or CVE…" value="{{ filters.search }}">
+    <select name="severity">
+        <option value="">Any severity</option>
+        {% for sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] %}
+        <option value="{{ sev }}" {% if filters.severity == sev %}selected{% endif %}>{{ sev }}</option>
+        {% endfor %}
+    </select>
+    <label style="display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:13px; color: var(--text-soft); margin:0;">
+        <input type="checkbox" name="kev_only" value="1" style="width:auto;" {% if filters.kev_only %}checked{% endif %}>
+        Known exploited only
+    </label>
+    <button type="submit" class="btn secondary">Filter</button>
+</form>
+
+<table>
+    <tr>
+        <th>Asset</th>
+        <th>CVE / CWE</th>
+        <th>Severity</th>
+        <th>CVSS</th>
+        <th>EPSS</th>
+        <th>Service / Port</th>
+        <th>Found</th>
+        <th>Scan</th>
+    </tr>
+    {% for f in findings %}
+    <tr>
+        <td>
+            {% if f.asset_id %}<a href="{{ url_for('asset_detail', asset_id=f.asset_id) }}">{{ f.asset_label }}</a>{% else %}{{ f.asset_label or "—" }}{% endif %}
+        </td>
+        <td>
+            {{ f.cve_id or "—" }}
+            {% if f.cwe_name %}<div style="font-size:10px; color: var(--muted);">{{ f.cwe_name }}</div>{% endif %}
+            {% if f.is_kev %}<div style="font-size:10px; color: var(--critical); font-weight:700;">⚠ KNOWN EXPLOITED</div>{% endif %}
+        </td>
+        <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+        <td>{{ f.cvss_score if f.cvss_score is not none else "—" }}</td>
+        <td>{{ "%.1f%%"|format(f.epss_score * 100) if f.epss_score is not none else "—" }}</td>
+        <td>{{ f.service }}{% if f.port_number %}:{{ f.port_number }}{% endif %}</td>
+        <td class="time-cell">{{ f.scan_time }}</td>
+        <td><a href="{{ url_for('scan_detail', scan_id=f.scan_id) }}">#{{ f.scan_id }} →</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" style="text-align:center; color: var(--muted);">No findings match these filters.</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}
